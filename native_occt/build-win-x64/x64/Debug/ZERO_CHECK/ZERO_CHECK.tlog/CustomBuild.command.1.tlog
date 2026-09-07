@@ -1,0 +1,10 @@
+^D:\DYNAMIC\LIVOXHMI\NATIVE_OCCT\BUILD-WIN-X64\CMAKEFILES\86F5178AD880B4088A610D630BCEAF20\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SD:/Dynamic/LivoxHmi/native_occt -BD:/Dynamic/LivoxHmi/native_occt/build-win-x64 --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file D:/Dynamic/LivoxHmi/native_occt/build-win-x64/OcctHmiBridge.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 14,
+  "id": "MACHINE_A",
+  "name": "Machine A",
+  "mid360ConfigPath": "config/mid360_config.json",
+  "calibration": {
+    "lidarToWorld": [
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    "imuCalibrated": false,
+    "coordinateFrameLocked": false,
+    "zPositiveDown": true,
+    "userXRotationDeg": 0.0,
+    "imuRollDeg": 0.0,
+    "imuPitchDeg": 0.0,
+    "imuTiltDeg": 0.0
+  },
+  "surfaces": [
+    {
+      "id": "S01",
+      "name": "Surface 01",
+      "type": "Plane",
+      "origin": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "reflectivity": 0,
+        "tag": 0
+      },
+      "normal": {
+        "x": 0,
+        "y": 0,
+        "z": 1,
+        "reflectivity": 0,
+        "tag": 0
+      },
+      "uAxis": {
+        "x": 1,
+        "y": 0,
+        "z": 0,
+        "reflectivity": 0,
+        "tag": 0
+      },
+      "vAxis": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "reflectivity": 0,
+        "tag": 0
+      },
+      "validationRmseMm": 0,
+      "frame": "MID360_SENSOR",
+      "widthMeters": 2.0,
+      "heightMeters": 1.5
+    }
+  ],
+  "zones": [
+    {
+      "id": "Z01",
+      "name": "Zone 01",
+      "surfaceId": "S01",
+      "type": "Rectangle",
+      "polygon": [
+        {
+          "u": 0,
+          "v": 0
+        },
+        {
+          "u": 0.5,
+          "v": 0
+        },
+        {
+          "u": 0.5,
+          "v": 0.5
+        },
+        {
+          "u": 0,
+          "v": 0.5
+        }
+      ],
+      "enabled": true
+    }
+  ],
+  "detection": {
+    "detectionFps": 18,
+    "confirmFrames": 5,
+    "releaseFrames": 5,
+    "zoneFrontMm": 125,
+    "zoneBackMm": 125,
+    "nearRangeMeters": 3.0,
+    "midRangeMeters": 6.0,
+    "nearMinPoints": 4,
+    "midMinPoints": 3,
+    "farMinPoints": 2,
+    "maxTouchEvidencePerFrame": 128
+  }
+}

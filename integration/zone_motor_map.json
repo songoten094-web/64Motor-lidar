@@ -1,0 +1,22 @@
+{
+  "SpeedMultiplier": 2.0,
+  "FastDurationSeconds": 30.0,
+  "Mappings": [
+    { "LivoxZoneId": "Z01", "ClusterId": 1, "WaveZoneColumn": 1 },
+    { "LivoxZoneId": "Z02", "ClusterId": 1, "WaveZoneColumn": 2 },
+    { "LivoxZoneId": "Z03", "ClusterId": 1, "WaveZoneColumn": 3 },
+    { "LivoxZoneId": "Z04", "ClusterId": 1, "WaveZoneColumn": 4 },
+    { "LivoxZoneId": "Z05", "ClusterId": 1, "WaveZoneColumn": 5 },
+    { "LivoxZoneId": "Z06", "ClusterId": 1, "WaveZoneColumn": 6 },
+    { "LivoxZoneId": "Z07", "ClusterId": 1, "WaveZoneColumn": 7 },
+    { "LivoxZoneId": "Z08", "ClusterId": 1, "WaveZoneColumn": 8 },
+    { "LivoxZoneId": "Z09", "ClusterId": 1, "WaveZoneColumn": 9 },
+    { "LivoxZoneId": "Z10", "ClusterId": 1, "WaveZoneColumn": 10 },
+    { "LivoxZoneId": "Z11", "ClusterId": 1, "WaveZoneColumn": 11 },
+    { "LivoxZoneId": "Z12", "ClusterId": 1, "WaveZoneColumn": 12 },
+    { "LivoxZoneId": "Z13", "ClusterId": 1, "WaveZoneColumn": 13 },
+    { "LivoxZoneId": "Z14", "ClusterId": 1, "WaveZoneColumn": 14 },
+    { "LivoxZoneId": "Z15", "ClusterId": 1, "WaveZoneColumn": 15 },
+    { "LivoxZoneId": "Z16", "ClusterId": 1, "WaveZoneColumn": 16 }
+  ]
+}

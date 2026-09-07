@@ -1,0 +1,70 @@
+
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LivoxHmi.Core\LivoxHmi.Core.csproj" />
+    <ProjectReference Include="..\LivoxHmi.Device\LivoxHmi.Device.csproj" />
+    <ProjectReference Include="..\WaveMotionControl\WaveMotionControl.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pin the Helix v3 dependency graph explicitly. 3.1.2 moved Color4 to
+         HelixToolkit.Maths while Color4Collection is supplied by HelixToolkit.Maths in this dependency graph. -->
+    <PackageReference Include="HelixToolkit.Wpf.SharpDX" Version="3.1.2" />
+    <PackageReference Include="HelixToolkit.SharpDX" Version="3.1.2" />
+    <PackageReference Include="HelixToolkit.Maths" Version="3.1.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\config\mid360_config.json">
+      <Link>config\mid360_config.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\integration\zone_motor_map.json">
+      <Link>integration\zone_motor_map.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\projects\Machine_A.project.json">
+      <Link>projects\Machine_A.project.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!--
+    Native SDK2 bridge is built separately with scripts/build_native.ps1.
+    We copy ONLY LivoxHmiBridge.dll because the bridge links Livox SDK2
+    statically. This removes the previous "missing dependency" failure
+    caused by livox_lidar_sdk_shared.dll not being present.
+  -->
+  <Target Name="CopyLivoxNative" AfterTargets="Build">
+    <PropertyGroup>
+      <NativeDir>$(MSBuildProjectDirectory)\..\..\native\build-win-x64\bin\$(Configuration)</NativeDir>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(NativeDir)\LivoxHmiBridge.dll')"
+           Text="LivoxHmiBridge.dll was not found. Build native first: scripts\build_native.ps1 -Configuration $(Configuration)" />
+    <Copy SourceFiles="$(NativeDir)\LivoxHmiBridge.dll"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- Optional OCCT bridge. The HMI still builds/runs without it; NEW OCCT B-SPLINE is enabled at runtime only when OcctHmiBridge.dll is present. -->
+  <Target Name="CopyOcctNative" AfterTargets="Build">
+    <PropertyGroup>
+      <OcctNativeDir>$(MSBuildProjectDirectory)\..\..\native_occt\build-win-x64\bin\$(Configuration)</OcctNativeDir>
+    </PropertyGroup>
+    <ItemGroup Condition="Exists('$(OcctNativeDir)')">
+      <OcctRuntime Include="$(OcctNativeDir)\*.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(OcctRuntime)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Condition="'@(OcctRuntime)' != ''" />
+  </Target>
+</Project>

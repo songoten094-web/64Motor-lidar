@@ -1,0 +1,548 @@
+<Window x:Class="LivoxHmi.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:hx="http://helix-toolkit.org/wpf/SharpDX"
+        xmlns:wfi="clr-namespace:System.Windows.Forms.Integration;assembly=WindowsFormsIntegration"
+        Title="LIVOX + WAVE MOTION HMI" Width="1480" Height="900"
+        WindowStartupLocation="CenterScreen"
+        MinWidth="1200" MinHeight="720">
+    <TabControl x:Name="MainTabs" Background="#171A1F" BorderThickness="0">
+        <TabItem Header="LIDAR / ZONE">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="350"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="36"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Column="0" Background="#20242A" Padding="14">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <TextBlock Text="LIVOX HMI V1.7" Foreground="White" FontSize="22"
+                               FontWeight="Bold" Margin="0,0,0,4"/>
+                    <TextBlock Text="Point Cloud Simulator / Viewer" Foreground="#9EA7B3"
+                               FontSize="12" Margin="0,0,0,18"/>
+
+                    <TextBlock Text="DATA SOURCE" Foreground="#9EA7B3" FontWeight="Bold"/>
+                    <Grid Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Button x:Name="SimulatorButton" Grid.Column="0" Content="Start Simulator"
+                                Click="SimulatorButton_Click" Height="34" Margin="0,0,4,0"/>
+                        <Button x:Name="LivoxButton" Grid.Column="1" Content="Connect MID-360"
+                                Click="LivoxButton_Click" Height="34" Margin="4,0,0,0"/>
+                    </Grid>
+                    <TextBlock x:Name="SourceStatus" Text="Source: None"
+                               Foreground="White" FontSize="15" Margin="0,8,0,4"/>
+                    <TextBlock Text="MID-360: Ethernet • Host 192.168.1.5 • UDP 56101–56501"
+                               Foreground="#8F9AA7" FontSize="9" TextWrapping="Wrap" Margin="0,0,0,12"/>
+
+                    <TextBlock Text="SIMULATOR" Foreground="#9EA7B3" FontWeight="Bold"/>
+                    <TextBlock Text="Scenario" Foreground="#C8CDD4" Margin="0,8,0,3"/>
+                    <ComboBox x:Name="ScenarioCombo" SelectedIndex="0" Height="30"
+                              SelectionChanged="ScenarioCombo_SelectionChanged">
+                        <ComboBoxItem Content="Demo room" Tag="DemoRoom"/>
+                        <ComboBoxItem Content="Moving object" Tag="MovingObject"/>
+                        <ComboBoxItem Content="Floor only" Tag="FloorOnly"/>
+                        <ComboBoxItem Content="Stress / random" Tag="Stress"/>
+                    </ComboBox>
+                    <TextBlock Text="Points / frame" Foreground="#C8CDD4" Margin="0,10,0,3"/>
+                    <ComboBox x:Name="PointCountCombo" SelectedIndex="1" Height="30"
+                              SelectionChanged="PointCountCombo_SelectionChanged">
+                        <ComboBoxItem Content="10,000" Tag="10000"/>
+                        <ComboBoxItem Content="24,000" Tag="24000"/>
+                        <ComboBoxItem Content="40,000" Tag="40000"/>
+                        <ComboBoxItem Content="80,000" Tag="80000"/>
+                        <ComboBoxItem Content="120,000" Tag="120000"/>
+                    </ComboBox>
+                    <TextBlock Text="Frame rate" Foreground="#C8CDD4" Margin="0,10,0,3"/>
+                    <ComboBox x:Name="FpsCombo" SelectedIndex="1" Height="30"
+                              SelectionChanged="FpsCombo_SelectionChanged">
+                        <ComboBoxItem Content="5 FPS" Tag="5"/>
+                        <ComboBoxItem Content="15 FPS" Tag="15"/>
+                        <ComboBoxItem Content="20 FPS" Tag="20"/>
+                        <ComboBoxItem Content="30 FPS" Tag="30"/>
+                    </ComboBox>
+
+                    <Separator Margin="0,18,0,18"/>
+
+                    <TextBlock Text="POINT CLOUD" Foreground="#9EA7B3" FontWeight="Bold"/>
+                    <TextBlock x:Name="PointCountText" Text="Points: 0" Foreground="White" Margin="0,5"/>
+                    <TextBlock x:Name="FrameText" Text="Frame: 0" Foreground="White" Margin="0,5"/>
+                    <TextBlock x:Name="LatencyText" Text="Render: -- ms" Foreground="White" Margin="0,5"/>
+                    <TextBlock x:Name="PacketText" Text="Packets: 0" Foreground="White" Margin="0,5"/>
+                    <TextBlock x:Name="DroppedText" Text="Dropped: 0" Foreground="White" Margin="0,5"/>
+                    <TextBlock Text="MÀU POINT CLOUD" Foreground="#9EA7B3" FontWeight="Bold" Margin="0,12,0,4"/>
+                    <ComboBox x:Name="ColorModeCombo" SelectedIndex="0" Height="30" SelectionChanged="ColorModeCombo_SelectionChanged">
+                        <ComboBoxItem Content="Một màu" Tag="Uniform"/>
+                        <ComboBoxItem Content="Reflectivity Livox" Tag="Reflectivity"/>
+                        <ComboBoxItem Content="Khoảng cách" Tag="Distance"/>
+                        <ComboBoxItem Content="Tag" Tag="Tag"/>
+                    </ComboBox>
+                    <TextBlock x:Name="ColorLegendText" Text="Reflectivity: 0–150 diffuse | 151–255 retroreflection"
+                               Foreground="#C8CDD4" FontSize="10" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                    <!-- V1.7.4: fixed-size Livox Tag telemetry panel.
+                         Realtime counters must never change sidebar geometry. -->
+                    <Border Background="#292F36" Padding="7" Margin="0,8,0,0" CornerRadius="3" Height="82">
+                        <Grid Width="318">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="16"/>
+                                <RowDefinition Height="34"/>
+                                <RowDefinition Height="18"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Text="LIVOX TAG DECODER" Foreground="#9EA7B3" FontWeight="Bold" FontSize="10"
+                                       Height="16" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Grid.Row="1" x:Name="TagStatsText"
+                                       Text="Normal  00000000   Atmos M 00000000   Atmos L 00000000&#10;Drag    00000000   Other   00000000   Reserv  00000000"
+                                       Foreground="White" FontFamily="Consolas" FontSize="9.5" Margin="0,2,0,0"
+                                       Height="32" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Grid.Row="2" x:Name="SmokeCandidateText" Text="Atmos candidates  00000000"
+                                       Foreground="#FFD27A" FontFamily="Consolas" FontSize="9" Margin="0,1,0,0"
+                                       Height="17" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                        </Grid>
+                    </Border>
+
+                    <Separator Margin="0,18,0,18"/>
+
+                    <TextBlock Text="MID-360 HEALTH / HMS" Foreground="#9EA7B3" FontWeight="Bold"/>
+                    <TextBlock x:Name="HmsStatusText" Text="HMS: not connected" Foreground="#C8CDD4" FontWeight="SemiBold" Margin="0,6,0,3"/>
+                    <TextBlock x:Name="HmsDetailsText" Text="-" Foreground="#C8CDD4" FontSize="9" TextWrapping="Wrap"/>
+
+                    <Separator Margin="0,18,0,18"/>
+
+                    <TextBlock Text="IMU / VIEW ALIGNMENT" Foreground="#9EA7B3" FontWeight="Bold"/>
+                    <Border Background="#292F36" Padding="8" Margin="0,6,0,0" CornerRadius="3" Height="108">
+                        <StackPanel Width="318">
+                            <TextBlock x:Name="ImuStatusText" Text="IMU: not connected" Foreground="#C8CDD4" FontWeight="SemiBold" Height="18" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock x:Name="ImuAnglesText"
+                                       Text="Roll --°   Pitch --°   Tilt --°"
+                                       Foreground="White" FontFamily="Consolas" FontSize="10" Margin="0,4,0,0" Height="16" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock x:Name="ImuRawText"
+                                       Text="ACC -- -- -- g&#10;GYRO -- -- -- °/s"
+                                       Foreground="#B9C2CC" FontFamily="Consolas" FontSize="9" Margin="0,3,0,0" Height="30" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock x:Name="ImuQualityText" Text="N 0 | waiting for samples"
+                                       Foreground="#8F9AA7" FontFamily="Consolas" FontSize="9" Margin="0,3,0,0" Height="16" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock x:Name="ImuReferenceText" Visibility="Collapsed" Text="Display alignment disabled in geometry workflow"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Display alignment controls were intentionally removed from the operator UI.
+                         Geometry/Surface/Zone logic uses MID360_SENSOR only.
+                         These collapsed controls keep backwards-compatible code-behind names without cluttering the HMI. -->
+                    <Grid Visibility="Collapsed">
+                        <Button x:Name="CalibrateZButton" Click="CalibrateZ_Click"/>
+                        <Button x:Name="SetXDirectionButton" Click="SetXDirection_Click"/>
+                        <Button x:Name="CancelXDirectionButton" Click="CancelXDirection_Click"/>
+                        <Button x:Name="LockFrameButton" Click="LockFrame_Click"/>
+                        <TextBlock x:Name="XDirectionValueText"/>
+                        <TextBlock x:Name="XDirectionHintText"/>
+                        <TextBlock x:Name="CoordinateFrameStatusText"/>
+                    </Grid>
+
+                    <Separator Margin="0,18,0,18"/>
+
+                    <TextBlock Text="STATIC MAP • SENSOR FRAME" Foreground="#9EA7B3" FontWeight="Bold"/>
+                    <TextBlock Text="Multi-frame voxel accumulation. Map geometry is saved in raw MID-360 SENSOR XYZ; IMU affects display only."
+                               Foreground="#C8CDD4" FontSize="9.5" TextWrapping="Wrap" Margin="0,4,0,6"/>
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Button x:Name="BuildMapButton" Grid.Column="0" Content="BUILD MAP" Click="BuildMapButton_Click" Height="34" Margin="0,0,3,0"/>
+                        <Button x:Name="FinalizeMapButton" Grid.Column="1" Content="STOP / LOCK" Click="FinalizeMapButton_Click" Height="34" Margin="3,0,0,0" IsEnabled="False"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Content="SAVE MAP" Click="SaveMapButton_Click" Height="30" Margin="0,0,3,0"/>
+                        <Button Grid.Column="1" Content="LOAD MAP" Click="LoadMapButton_Click" Height="30" Margin="3,0,0,0"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Button x:Name="EnterDesignModeButton" Grid.Column="0" Content="SURFACE DESIGN" Click="EnterDesignModeButton_Click" Height="32" Margin="0,0,3,0" IsEnabled="False"/>
+                        <Button x:Name="ExitDesignModeButton" Grid.Column="1" Content="BACK TO LIVE" Click="ExitDesignModeButton_Click" Height="32" Margin="3,0,0,0" IsEnabled="False"/>
+                    </Grid>
+                    <Button Content="CLEAR STATIC MAP" Click="ClearMapButton_Click" Height="28" Margin="0,0,0,5"/>
+                    <TextBlock x:Name="ViewerModeText" Text="VIEW: LIVE POINT CLOUD" Foreground="#7FC8FF" FontFamily="Consolas" FontSize="9.5" Margin="0,0,0,3"/>
+                    <TextBlock x:Name="StaticMapStatusText" Text="MAP: EMPTY" Foreground="#7FC8FF" FontFamily="Consolas" FontSize="10" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="StaticMapQualityText" Text="Voxel 20 mm | Stable: --" Foreground="#9EA7B3" FontFamily="Consolas" FontSize="9" Margin="0,2,0,0"/>
+                    <Border Background="#1C252D" BorderBrush="#42515D" BorderThickness="1" Padding="7" Margin="0,8,0,0">
+                        <StackPanel>
+                            <TextBlock Text="STATIC TOUCH • 5-FRAME CONFIRM" Foreground="#FFD166" FontWeight="Bold"/>
+                            <TextBlock Text="Dynamic points inside a Zone volume → small distance-adaptive point threshold → 5-frame confirm → one-shot trigger → 5-frame clear/re-arm." Foreground="#AEB7C2" FontSize="9.2" TextWrapping="Wrap" Margin="0,2,0,5"/>
+                            <Button x:Name="TouchDetectionButton" Content="START TOUCH DETECTION" Click="TouchDetectionButton_Click" Height="30"/>
+                            <TextBlock x:Name="TouchDetectionStatusText" Text="STATIC TOUCH: OFF" Foreground="#9EA7B3" FontFamily="Consolas" FontSize="9.3" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+                    <Separator Margin="0,14,0,14"/>
+
+                    <TextBlock Text="SURFACE EDITOR • SENSOR FRAME" Foreground="#9EA7B3" FontWeight="Bold"/>
+                    <ListBox x:Name="SurfaceList" DisplayMemberPath="Name"
+                             Height="82" Margin="0,6,0,6" SelectionChanged="SurfaceList_SelectionChanged"/>
+                    <Border Background="#1C252D" BorderBrush="#42515D" BorderThickness="1" Padding="7" Margin="0,0,0,7">
+                        <StackPanel>
+                            <TextBlock x:Name="SurfaceFrameText" Text="FRAME: MID360_SENSOR 🔒" Foreground="#7FC8FF" FontFamily="Consolas" FontWeight="SemiBold"/>
+                            <TextBlock Text="Surface geometry luôn lưu theo Xs/Ys/Zs của MID-360. Camera/IMU chỉ thay đổi bản sao hiển thị."
+                                       Foreground="#AEB7C2" FontSize="10.5" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <Button x:Name="NewSensorPlaneButton" Grid.Column="0" Content="NEW PLANE" Click="NewSensorPlaneButton_Click" Height="34" Margin="0,0,2,0"/>
+                        <Button x:Name="NewSensorCylinderButton" Grid.Column="1" Content="NEW CYL" Click="NewSensorCylinderButton_Click" Height="34" Margin="2,0"/>
+                        <Button x:Name="CreatePlaneButton" Grid.Column="2" Content="APPLY" Click="CreatePlaneButton_Click" Height="34" Margin="2,0,0,0"/>
+                    </Grid>
+                    <Button x:Name="NewOcctBsplineButton" Content="NEW OCCT B-SPLINE" Click="NewOcctBsplineButton_Click" Height="32" Margin="0,0,0,5"/>
+                    <TextBlock x:Name="OcctStatusText" Text="OCCT: checking..." Foreground="#7FC8FF" FontFamily="Consolas" FontSize="9.3" TextWrapping="Wrap" Margin="0,0,0,5"/>
+
+                    <TextBlock Text="Preset orientation khi tạo mới" Foreground="#C8CDD4" Margin="0,0,0,3"/>
+                    <ComboBox x:Name="SurfaceOrientationCombo" SelectedIndex="0" Height="30">
+                        <ComboBoxItem Content="XY (Normal +Zs)" Tag="XY"/>
+                        <ComboBoxItem Content="XZ (Normal -Ys)" Tag="XZ"/>
+                        <ComboBoxItem Content="YZ (Normal +Xs)" Tag="YZ"/>
+                    </ComboBox>
+
+                    <TextBlock Text="Origin — SENSOR XYZ (m)" Foreground="#C8CDD4" Margin="0,9,0,3"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <TextBox x:Name="SurfaceXText" Grid.Column="0" Text="1" Margin="0,0,3,0" ToolTip="Xs (m)"/>
+                        <TextBox x:Name="SurfaceYText" Grid.Column="1" Text="0" Margin="3,0,3,0" ToolTip="Ys (m)"/>
+                        <TextBox x:Name="SurfaceZText" Grid.Column="2" Text="0" Margin="3,0,0,0" ToolTip="Zs (m)"/>
+                    </Grid>
+                    <TextBlock Text="Size (m)" Foreground="#C8CDD4" Margin="0,9,0,3"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <TextBox x:Name="SurfaceWidthText" Grid.Column="0" Text="1" Margin="0,0,3,0" ToolTip="Width (m)"/>
+                        <TextBox x:Name="SurfaceHeightText" Grid.Column="1" Text="1" Margin="3,0,0,0" ToolTip="Height (m)"/>
+                    </Grid>
+                    <TextBlock Text="Curved (Cylinder) — Radius (m)" Foreground="#C8CDD4" Margin="0,8,0,3"/>
+                    <TextBox x:Name="SurfaceRadiusText" Text="1.0" ToolTip="Cylinder radius. Width is arc length along U; Height is axial length V."/>
+                    <Grid Margin="0,4,0,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Content="R −" Click="CurvedRadiusMinus_Click" Height="27" Margin="0,0,2,0"/>
+                        <Button Grid.Column="1" Content="FLIP CURVE" Click="FlipCurvedSurface_Click" Height="27" Margin="2,0"/>
+                        <Button Grid.Column="2" Content="R +" Click="CurvedRadiusPlus_Click" Height="27" Margin="2,0,0,0"/>
+                    </Grid>
+                    <TextBlock x:Name="CurvedInfoText" Text="Arc angle: --" Foreground="#7FC8FF" FontFamily="Consolas" FontSize="9.4" Margin="0,3,0,0"/>
+                    <TextBlock Text="OCCT B-Spline — Bulge / Twist (m)" Foreground="#C8CDD4" Margin="0,7,0,3"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <TextBox x:Name="OcctBulgeText" Grid.Column="0" Text="0.20" Margin="0,0,3,0" ToolTip="B-Spline bulge along local Normal, meters"/>
+                        <TextBox x:Name="OcctTwistText" Grid.Column="1" Text="0.00" Margin="3,0,0,0" ToolTip="B-Spline twist term, meters"/>
+                    </Grid>
+                    <Grid Margin="0,5,0,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="110"/></Grid.ColumnDefinitions>
+                        <Button x:Name="FitOcctStaticMapButton" Grid.Column="0" Content="FIT OCCT TO STATIC MAP" Click="FitOcctStaticMapButton_Click" Height="30" Margin="0,0,3,0"/>
+                        <ComboBox x:Name="OcctFitDepthCombo" Grid.Column="1" SelectedIndex="1" Height="30" ToolTip="Half-depth of SENSOR-frame selection prism">
+                            <ComboBoxItem Content="±150 mm" Tag="0.15"/><ComboBoxItem Content="±300 mm" Tag="0.30"/><ComboBoxItem Content="±500 mm" Tag="0.50"/>
+                        </ComboBox>
+                    </Grid>
+                    <TextBlock x:Name="OcctFitStatusText" Text="FIT: đặt coarse Surface phủ vùng map rồi bấm FIT" Foreground="#7FC8FF" FontFamily="Consolas" FontSize="9.2" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                    <TextBlock Text="Plane/Cylinder/OCCT đều lưu trong MID360_SENSOR. Với OCCT, U/V là Surface-local parameter scaled theo Width/Height; kiểm tra kích thước thật bằng Sensor XYZ / edge length." Foreground="#9EA7B3" FontSize="9.2" TextWrapping="Wrap" Margin="0,3,0,0"/>
+
+                    <TextBlock Text="MOVE trong Sensor Frame" Foreground="#C8CDD4" Margin="0,10,0,3"/>
+                    <Grid Margin="0,0,0,4">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Content="Xs −" Tag="MX-" Click="SurfaceTransformButton_Click" Height="28" Margin="0,0,2,0"/>
+                        <Button Grid.Column="1" Content="Ys −" Tag="MY-" Click="SurfaceTransformButton_Click" Height="28" Margin="2,0"/>
+                        <Button Grid.Column="2" Content="Zs −" Tag="MZ-" Click="SurfaceTransformButton_Click" Height="28" Margin="2,0,0,0"/>
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Content="Xs +" Tag="MX+" Click="SurfaceTransformButton_Click" Height="28" Margin="0,0,2,0"/>
+                        <Button Grid.Column="1" Content="Ys +" Tag="MY+" Click="SurfaceTransformButton_Click" Height="28" Margin="2,0"/>
+                        <Button Grid.Column="2" Content="Zs +" Tag="MZ+" Click="SurfaceTransformButton_Click" Height="28" Margin="2,0,0,0"/>
+                    </Grid>
+                    <Grid Margin="0,5,0,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Move step" Foreground="#9EA7B3" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                        <ComboBox x:Name="SurfaceMoveStepCombo" Grid.Column="1" SelectedIndex="1" Height="27">
+                            <ComboBoxItem Content="1 mm" Tag="0.001"/>
+                            <ComboBoxItem Content="10 mm" Tag="0.01"/>
+                            <ComboBoxItem Content="100 mm" Tag="0.1"/>
+                        </ComboBox>
+                    </Grid>
+
+                    <TextBlock Text="ROTATE quanh trục Sensor" Foreground="#C8CDD4" Margin="0,10,0,3"/>
+                    <Grid Margin="0,0,0,4">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Content="RX −" Tag="RX-" Click="SurfaceTransformButton_Click" Height="28" Margin="0,0,2,0"/>
+                        <Button Grid.Column="1" Content="RY −" Tag="RY-" Click="SurfaceTransformButton_Click" Height="28" Margin="2,0"/>
+                        <Button Grid.Column="2" Content="RZ −" Tag="RZ-" Click="SurfaceTransformButton_Click" Height="28" Margin="2,0,0,0"/>
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Content="RX +" Tag="RX+" Click="SurfaceTransformButton_Click" Height="28" Margin="0,0,2,0"/>
+                        <Button Grid.Column="1" Content="RY +" Tag="RY+" Click="SurfaceTransformButton_Click" Height="28" Margin="2,0"/>
+                        <Button Grid.Column="2" Content="RZ +" Tag="RZ+" Click="SurfaceTransformButton_Click" Height="28" Margin="2,0,0,0"/>
+                    </Grid>
+                    <Grid Margin="0,5,0,5">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Rotate step" Foreground="#9EA7B3" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                        <ComboBox x:Name="SurfaceRotateStepCombo" Grid.Column="1" SelectedIndex="1" Height="27">
+                            <ComboBoxItem Content="0.1°" Tag="0.1"/>
+                            <ComboBoxItem Content="1°" Tag="1"/>
+                            <ComboBoxItem Content="5°" Tag="5"/>
+                        </ComboBox>
+                    </Grid>
+
+                    <TextBlock x:Name="SurfaceAxesText" Text="U/V/N: --" Foreground="#9EA7B3" FontFamily="Consolas" FontSize="9.5" TextWrapping="Wrap" Margin="0,1,0,5"/>
+                    <TextBlock x:Name="SelectedSurfaceText" Text="SELECTED: --" Foreground="#FFD166" FontFamily="Consolas" FontWeight="SemiBold" Margin="0,2,0,5"/>
+                    <Grid Margin="0,0,0,7">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <Button x:Name="ShowSurfaceButton" Grid.Column="0" Content="HIỆN" Click="ShowSurfaceButton_Click" Height="30" Margin="0,0,2,0"/>
+                        <Button x:Name="ClearSurfaceButton" Grid.Column="1" Content="ẨN" Click="ClearSurfaceButton_Click" Height="30" Margin="2,0"/>
+                        <Button x:Name="DeleteSurfaceButton" Grid.Column="2" Content="XÓA" Click="DeleteSurfaceButton_Click" Height="30" Margin="2,0,0,0"/>
+                    </Grid>
+                    <!-- Legacy 3-point picker is removed from the visible workflow. -->
+                    <Grid Visibility="Collapsed">
+                        <Button x:Name="PickSurfaceButton" Click="PickSurfaceButton_Click"/>
+                        <Button x:Name="CancelSurfacePickButton" Click="CancelSurfacePickButton_Click"/>
+                    </Grid>
+                    <TextBlock x:Name="SurfacePickStatus" Text="Surface: sẵn sàng"
+                               Foreground="#C8CDD4" FontSize="10.5" Margin="0,0,0,6" TextWrapping="Wrap"/>
+                    <TextBlock Text="ZONE EDITOR • SURFACE UV" Foreground="#9EA7B3" FontWeight="Bold" Margin="0,5,0,0"/>
+                    <TextBlock Text="Zone được lưu theo UV local của Surface đang chọn; Surface vẫn nằm trong MID360_SENSOR."
+                               Foreground="#AEB7C2" FontSize="9.5" TextWrapping="Wrap" Margin="0,3,0,5"/>
+                    <ListBox x:Name="ZoneList" DisplayMemberPath="Name" Height="76" Margin="0,2,0,6" SelectionChanged="ZoneList_SelectionChanged"/>
+                    <TextBlock x:Name="SelectedZoneText" Text="SELECTED ZONE: --" Foreground="#FFB347" FontFamily="Consolas" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                    <TextBlock Text="VẼ TRỰC TIẾP TRÊN SURFACE" Foreground="#7FC8FF" FontWeight="SemiBold" Margin="0,1,0,4"/>
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Content="DRAW RECT" Click="StartDrawRectZoneButton_Click" Height="31" Margin="0,0,2,0"/>
+                        <Button Grid.Column="1" Content="DRAW POLYGON" Click="StartDrawPolygonZoneButton_Click" Height="31" Margin="2,0,0,0"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,6">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Content="FINISH" Click="FinishZoneDrawButton_Click" Height="29" Margin="0,0,2,0"/>
+                        <Button Grid.Column="1" Content="CANCEL" Click="CancelZoneDrawButton_Click" Height="29" Margin="2,0"/>
+                        <Button Grid.Column="2" Content="HIỆN" Click="ShowZoneButton_Click" Height="29" Margin="2,0"/>
+                        <Button Grid.Column="3" Content="XÓA" Click="DeleteZoneButton_Click" Height="29" Margin="2,0,0,0"/>
+                    </Grid>
+                    <TextBlock Text="LMB trên Surface = thêm điểm | RECT: 2 điểm | POLYGON: ≥3 điểm rồi FINISH"
+                               Foreground="#9EA7B3" FontSize="9.5" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                    <Border Background="#151D24" BorderBrush="#33404D" BorderThickness="1" Padding="6" Margin="0,0,0,7">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <CheckBox x:Name="ZoneSnapCheck" Grid.Column="0" Content="SNAP" IsChecked="True" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                            <ComboBox x:Name="ZoneSnapDistanceCombo" Grid.Column="1" SelectedIndex="2" Height="26">
+                                <ComboBoxItem Content="5 mm" Tag="0.005"/>
+                                <ComboBoxItem Content="10 mm" Tag="0.01"/>
+                                <ComboBoxItem Content="20 mm" Tag="0.02"/>
+                                <ComboBoxItem Content="50 mm" Tag="0.05"/>
+                            </ComboBox>
+                            <TextBlock x:Name="ZoneSnapStatusText" Grid.Column="2" Text="EDGE/VERTEX" Foreground="#7FC8FF" FontFamily="Consolas" FontSize="9" VerticalAlignment="Center" Margin="7,0,0,0"/>
+                        </Grid>
+                    </Border>
+                    <TextBlock Text="Center U / V (m)" Foreground="#C8CDD4" Margin="0,0,0,3"/>
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <TextBox x:Name="ZoneUText" Grid.Column="0" Text="0.5" Margin="0,0,3,0" ToolTip="Zone center U on selected surface"/>
+                        <TextBox x:Name="ZoneVText" Grid.Column="1" Text="0.5" Margin="3,0,0,0" ToolTip="Zone center V on selected surface"/>
+                    </Grid>
+                    <TextBlock Text="Width / Height (m)" Foreground="#C8CDD4" Margin="0,0,0,3"/>
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <TextBox x:Name="ZoneWidthText" Grid.Column="0" Text="0.5" Margin="0,0,3,0"/>
+                        <TextBox x:Name="ZoneHeightText" Grid.Column="1" Text="0.5" Margin="3,0,0,0"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Content="U −" Tag="ZU-" Click="ZoneTransformButton_Click" Height="28" Margin="0,0,2,0"/>
+                        <Button Grid.Column="1" Content="U +" Tag="ZU+" Click="ZoneTransformButton_Click" Height="28" Margin="2,0"/>
+                        <Button Grid.Column="2" Content="V −" Tag="ZV-" Click="ZoneTransformButton_Click" Height="28" Margin="2,0"/>
+                        <Button Grid.Column="3" Content="V +" Tag="ZV+" Click="ZoneTransformButton_Click" Height="28" Margin="2,0,0,0"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Step" Foreground="#AEB7C2" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ComboBox x:Name="ZoneMoveStepCombo" Grid.Column="1" SelectedIndex="1" Height="27">
+                            <ComboBoxItem Content="1 mm" Tag="0.001"/><ComboBoxItem Content="10 mm" Tag="0.01"/><ComboBoxItem Content="100 mm" Tag="0.1"/>
+                        </ComboBox>
+                        <Button Grid.Column="2" Content="APPLY ZONE" Click="ApplyZoneButton_Click" Height="27" Margin="6,0,0,0"/>
+                    </Grid>
+                    <TextBlock x:Name="ZoneStatusText" Text="Zone: chọn Surface trước" Foreground="#C8CDD4" FontSize="10" TextWrapping="Wrap" Margin="0,1,0,5"/>
+                    <Border Background="#15202A" BorderBrush="#47637A" BorderThickness="1" Padding="7" Margin="0,3,0,7">
+                        <StackPanel>
+                            <TextBlock Text="ZONE VOLUME • FIXED EXTRUDE" Foreground="#7FC8FF" FontWeight="Bold"/>
+                            <TextBlock Text="Mỗi Zone được extrude theo local normal với cùng một kích thước cố định." Foreground="#AEB7C2" FontSize="9.3" Margin="0,2,0,4"/>
+                            <TextBlock Text="CURVED ±125 mm  •  TOTAL 250 mm" Foreground="#D6DCE4" FontFamily="Consolas" FontWeight="SemiBold"/>
+                            <TextBlock Text="Detect arm trực tiếp trong từng Zone Volume; Zone ID đã được xác định bởi chính khối đó." Foreground="#9EA7B3" FontSize="9" Margin="0,4,0,0"/>
+                            <TextBox x:Name="ZoneExtrudeFrontText" Visibility="Collapsed" Text="250"/><TextBox x:Name="ZoneExtrudeBackText" Visibility="Collapsed" Text="250"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Background="#151922" BorderBrush="#33404D" BorderThickness="1" Padding="7" Margin="0,2,0,6">
+                        <StackPanel>
+                            <TextBlock Text="ZONE SENSOR COORDINATE" Foreground="#7FC8FF" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="ZoneCoordinateText" Text="--" Foreground="#D6DCE4" FontFamily="Consolas" FontSize="9.5" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Separator Margin="0,18,0,18"/>
+
+                    <TextBlock Text="PROJECT" Foreground="#9EA7B3" FontWeight="Bold"/>
+                    <TextBlock x:Name="ProjectStatus" Text="Machine_A" Foreground="White" Margin="0,5"/>
+                    <Button Content="Save Project" Click="SaveProject_Click"
+                            Height="32" Margin="0,8,0,0"/>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <Grid Grid.Column="1" Background="#111318">
+            <hx:Viewport3DX x:Name="Viewport"
+                            EffectsManager="{Binding EffectsManager}"
+                            ShowCoordinateSystem="True"
+                            ShowViewCube="False"
+                            ZoomExtentsWhenLoaded="True"
+                            CameraMode="Inspect"
+                            CameraRotationMode="Trackball"
+                            RotationSensitivity="1.2"
+                            RotateAroundMouseDownPoint="False"
+                            IsPanEnabled="True"
+                            IsMoveEnabled="True"
+                            UseDefaultGestures="True"
+                            IsRotationEnabled="True"
+                            IsZoomEnabled="True"
+                            EnableCursorPosition="False"
+                            EnableMouseButtonHitTest="False">
+                <hx:Viewport3DX.DefaultCamera>
+                    <hx:PerspectiveCamera Position="0,-8,4.5"
+                                           LookDirection="0,8,-4.5"
+                                           UpDirection="0,0,1"
+                                           FieldOfView="45"
+                                           NearPlaneDistance="0.01"
+                                           FarPlaneDistance="10000"/>
+                </hx:Viewport3DX.DefaultCamera>
+                <hx:AmbientLight3D Color="White"/>
+                <hx:DirectionalLight3D Direction="-1,-1,-1" Color="White"/>
+                <hx:PointGeometryModel3D x:Name="SurfacePickPointsModel"
+                                         Color="#FF4040"
+                                         Size="8,8"
+                                         IsHitTestVisible="False"/>
+                <hx:MeshGeometryModel3D x:Name="SurfaceFaceModel"
+                                         RenderOrder="105"
+                                         IsHitTestVisible="False"
+                                         CullMode="None"/>
+                <hx:LineGeometryModel3D x:Name="SurfaceOutlineModel"
+                                         RenderOrder="110"
+                                         Color="#00E5FF"
+                                         Thickness="1"
+                                         IsHitTestVisible="False"/>
+                <hx:LineGeometryModel3D x:Name="SurfaceUvGridModel" RenderOrder="108" Color="#668AD7E6" Thickness="0.55" IsHitTestVisible="False"/>
+                <hx:MeshGeometryModel3D x:Name="AllZoneFaceModel" RenderOrder="109" IsHitTestVisible="False" CullMode="None"/>
+                <hx:LineGeometryModel3D x:Name="AllZoneOutlineModel" RenderOrder="110" Color="#B8FFB300" Thickness="0.55" IsHitTestVisible="False"/>
+                <hx:MeshGeometryModel3D x:Name="ZoneFaceModel" RenderOrder="112" IsHitTestVisible="False" CullMode="None"/>
+                <hx:LineGeometryModel3D x:Name="ZoneOutlineModel" RenderOrder="113" Color="#FFFFC107" Thickness="0.85" IsHitTestVisible="False"/>
+                <hx:PointGeometryModel3D x:Name="ZoneVertexModel" RenderOrder="114" Color="#FFFFFFFF" Size="6,6" IsHitTestVisible="False"/>
+                <hx:LineGeometryModel3D x:Name="ZoneDrawPreviewModel" RenderOrder="115" Color="#FF00FF7F" Thickness="0.85" IsHitTestVisible="False"/>
+                <hx:PointGeometryModel3D x:Name="ZoneDrawVertexModel" RenderOrder="116" Color="#FF00FF7F" Size="6,6" IsHitTestVisible="False"/>
+                <!-- v2.2.1: selected Zone extrude is shown as a translucent 3D detection volume. -->
+                <hx:MeshGeometryModel3D x:Name="ZoneVolumeModel" RenderOrder="111" IsHitTestVisible="False" CullMode="None"/>
+                <hx:LineGeometryModel3D x:Name="ZoneVolumeOutlineModel" RenderOrder="117" Color="#AA00E5FF" Thickness="0.7" IsHitTestVisible="False"/>
+                <!-- World coordinate frame: O(0,0,0) is the MID-360 point-cloud origin.
+                     X = red, Y = green, Z = blue. Axes are fixed in world coordinates. -->
+                <hx:LineGeometryModel3D x:Name="WorldXAxisModel"
+                                         RenderOrder="100"
+                                         Color="#FFFF3030"
+                                         Thickness="0.8"
+                                         IsHitTestVisible="False"/>
+                <hx:LineGeometryModel3D x:Name="WorldYAxisModel"
+                                         RenderOrder="100"
+                                         Color="#FF30FF30"
+                                         Thickness="0.8"
+                                         IsHitTestVisible="False"/>
+                <hx:LineGeometryModel3D x:Name="WorldZAxisModel"
+                                         RenderOrder="100"
+                                         Color="#FF4090FF"
+                                         Thickness="0.8"
+                                         IsHitTestVisible="False"/>
+                <hx:MeshGeometryModel3D x:Name="WorldXAxisArrowModel"
+                                         RenderOrder="101" IsHitTestVisible="False" CullMode="None"/>
+                <hx:MeshGeometryModel3D x:Name="WorldYAxisArrowModel"
+                                         RenderOrder="101" IsHitTestVisible="False" CullMode="None"/>
+                <hx:MeshGeometryModel3D x:Name="WorldZAxisArrowModel"
+                                         RenderOrder="101" IsHitTestVisible="False" CullMode="None"/>
+                <hx:PointGeometryModel3D x:Name="SensorOriginModel"
+                                         Color="#FFFFFF00"
+                                         Size="6,6"
+                                         IsHitTestVisible="False"
+                                         Visibility="Collapsed"/>
+                <hx:MeshGeometryModel3D x:Name="SensorOriginSphereModel"
+                                         RenderOrder="120"
+                                         IsHitTestVisible="False"
+                                         CullMode="None"/>
+                <hx:PointGeometryModel3D x:Name="StaticMapModel"
+                                         RenderOrder="80"
+                                         Color="#FFD8E3EA"
+                                         Size="2,2"
+                                         EnableColorBlending="True"
+                                         BlendingFactor="1"
+                                         IsHitTestVisible="True"
+                                         Visibility="Collapsed"/>
+                <hx:PointGeometryModel3D x:Name="PointCloudModel"
+                                         Color="White"
+                                         Size="2,2"
+                                         EnableColorBlending="True"
+                                         BlendingFactor="0"
+                                         IsHitTestVisible="True"/>
+                <hx:PointGeometryModel3D x:Name="TouchEvidenceModel"
+                                         RenderOrder="180"
+                                         Color="#FFFF3B30"
+                                         Size="12,12"
+                                         IsHitTestVisible="False"/>
+                <hx:LineGeometryModel3D x:Name="WorldGridModel"
+                                         RenderOrder="50"
+                                         Color="#66717D"
+                                         Thickness="0.5"
+                                         IsHitTestVisible="False"/>
+            </hx:Viewport3DX>
+            <StackPanel HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12">
+                <Border Background="#D015181D" Padding="8" CornerRadius="5">
+                    <StackPanel>
+                        <TextBlock Text="3D VIEWER" Foreground="White" FontWeight="SemiBold" FontSize="12"/>
+                        <TextBlock Text="LMB: Rotate   MMB hold: Pan   Wheel: Zoom   F: Fit   R: Home"
+                                   Foreground="#AEB7C2" FontSize="9" Margin="0,3,0,0"/>
+                        <TextBlock Text="PROJECT  X0=Red   Y0=Green   Z0=Blue   O=MID-360"
+                                   Foreground="#D7DCE2" FontSize="9" Margin="0,2,0,0"/>
+                        <TextBlock Text="Cursor: point hit = XYZ thật; ngoài point cloud = mặt construction"
+                                   Foreground="#7FC8FF" FontSize="8.5" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+                <Border Background="#D015181D" Padding="7" CornerRadius="5" Margin="0,7,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Top ⟂" Click="TopView_Click" Margin="0,0,4,0" Padding="8,3" ToolTip="Orthographic Top"/>
+                        <Button Content="Front ⟂" Click="FrontView_Click" Margin="0,0,4,0" Padding="8,3" ToolTip="Orthographic Front"/>
+                        <Button Content="Right ⟂" Click="RightView_Click" Margin="0,0,4,0" Padding="8,3" ToolTip="Orthographic Right"/>
+                        <Button Content="Left ⟂" Click="LeftView_Click" Margin="0,0,4,0" Padding="8,3" ToolTip="Orthographic Left"/>
+                        <Button Content="Home" Click="HomeView_Click" Padding="8,3"/>
+                    </StackPanel>
+                </Border>
+                <Border Background="#D015181D" Padding="7" CornerRadius="5" Margin="0,6,0,0">
+                    <TextBlock x:Name="CoordinateInspectorText"
+                               Text="SENSOR   Xs +0.000  Ys +0.000  Zs +0.000 m | R 0.000 m&#10;PROJECT  X0 +0.000  Y0 +0.000  Z0 +0.000 m | R 0.000 m"
+                               Foreground="#E9EDF2" FontSize="10" FontFamily="Consolas"/>
+                </Border>
+            </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="1" Grid.ColumnSpan="2" Background="#171A1F">
+            <DockPanel>
+                <TextBlock x:Name="SystemStatus" Text="SYSTEM: IDLE"
+                           Foreground="White" VerticalAlignment="Center" Margin="12,0"/>
+                <TextBlock x:Name="DiagnosticStatus" Text="HMI ready"
+                           Foreground="#9EA7B3" VerticalAlignment="Center"
+                           HorizontalAlignment="Right" Margin="0,0,12,0"/>
+            </DockPanel>
+        </Border>
+    </Grid>
+        </TabItem>
+        <TabItem Header="WAVE MOTION / MOTOR">
+            <Grid Background="#171A1F">
+                <wfi:WindowsFormsHost x:Name="WaveMotionHost" Margin="0"/>
+            </Grid>
+        </TabItem>
+    </TabControl>
+</Window>

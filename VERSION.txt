@@ -1,0 +1,1 @@
+LivoxWaveHmi v1.0.1 single-app build fix
