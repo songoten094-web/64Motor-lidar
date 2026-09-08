@@ -18,9 +18,10 @@ using MediaPoint3D = System.Windows.Media.Media3D.Point3D;
 using MediaVector3D = System.Windows.Media.Media3D.Vector3D;
 using Vector3D = System.Windows.Media.Media3D.Vector3D;
 using System.Windows.Threading;
-namespace LivoxHmi.App;
 using WpfMessageBox = System.Windows.MessageBox;
 using WpfBrushes = System.Windows.Media.Brushes;
+namespace LivoxHmi.App;
+
 public partial class MainWindow : Window
 {
     public DefaultEffectsManager EffectsManager { get; } = new();
@@ -179,8 +180,8 @@ public partial class MainWindow : Window
     {
         _touchDetector = new StaticTouchDetector { Enabled = true };
         _project.Detection.DetectionFps = 18;
-        _project.Detection.ConfirmFrames = 7;
-        _project.Detection.ReleaseFrames = 7;
+        _project.Detection.ConfirmFrames = 5;
+        _project.Detection.ReleaseFrames = 5;
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -894,8 +895,8 @@ public partial class MainWindow : Window
             LookDirection = look,
             UpDirection = up,
             FieldOfView = 45,
-            NearPlaneDistance = 0.01,
-            FarPlaneDistance = 10000
+            NearPlaneDistance = 0.05,
+            FarPlaneDistance = 200
         };
         Viewport.InvalidateRender();
     }
@@ -909,8 +910,8 @@ public partial class MainWindow : Window
             LookDirection = look,
             UpDirection = up,
             Width = width,
-            NearPlaneDistance = 0.01,
-            FarPlaneDistance = 10000
+            NearPlaneDistance = 0.05,
+            FarPlaneDistance = 200
         };
         Viewport.InvalidateRender();
     }
@@ -2659,7 +2660,7 @@ public partial class MainWindow : Window
         }
 
         // Stored map stays in SENSOR XYZ. Only this display copy is transformed.
-        var maxDisplay = 300_000;
+        var maxDisplay = 80_000;
         var stride = Math.Max(1, (int)Math.Ceiling(map.Points.Count / (double)maxDisplay));
         var geometry = new PointGeometry3D
         {

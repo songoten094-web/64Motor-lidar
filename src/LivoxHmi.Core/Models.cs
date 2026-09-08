@@ -97,8 +97,8 @@ public sealed class DetectionSettings
 {
     // Realtime loop. 18 Hz + 5-frame confirmation gives ~278 ms nominal touch latency.
     public int DetectionFps { get; set; } = 18;
-    public int ConfirmFrames { get; set; } = 7;
-    public int ReleaseFrames { get; set; } = 7;
+    public int ConfirmFrames { get; set; } = 5;
+    public int ReleaseFrames { get; set; } = 5;
 
     // Symmetric-ish interaction volume around each Zone surface.
     public double ZoneFrontMm { get; set; } = 125;

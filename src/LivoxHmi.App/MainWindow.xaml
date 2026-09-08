@@ -413,8 +413,8 @@
                                            LookDirection="0,8,-4.5"
                                            UpDirection="0,0,1"
                                            FieldOfView="45"
-                                           NearPlaneDistance="0.01"
-                                           FarPlaneDistance="10000"/>
+                                           NearPlaneDistance="0.05"
+                                           FarPlaneDistance="200"/>
                 </hx:Viewport3DX.DefaultCamera>
                 <hx:AmbientLight3D Color="White"/>
                 <hx:DirectionalLight3D Direction="-1,-1,-1" Color="White"/>
@@ -477,7 +477,7 @@
                 <hx:PointGeometryModel3D x:Name="StaticMapModel"
                                          RenderOrder="80"
                                          Color="#FFD8E3EA"
-                                         Size="2,2"
+                                         Size="3,3"
                                          EnableColorBlending="True"
                                          BlendingFactor="1"
                                          IsHitTestVisible="True"

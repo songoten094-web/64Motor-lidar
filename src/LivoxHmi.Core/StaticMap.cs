@@ -11,7 +11,7 @@ public sealed class StaticMapSettings
     public double MinRangeMeters { get; set; } = 0.20;
     public double MaxRangeMeters { get; set; } = 30.0;
     public bool RejectNonNormalLivoxTags { get; set; } = true;
-    public int MaxVoxels { get; set; } = 1_500_000;
+    public int MaxVoxels { get; set; } = 600_000;
 }
 
 public sealed class StaticMapDefinition
@@ -52,6 +52,8 @@ public sealed class StaticMapBuilder
     private CancellationTokenSource? _workerCts;
     private Task? _workerTask;
     private volatile bool _isBuilding;
+    private int _cachedStableVoxels;
+    private DateTime _lastStableScanUtc = DateTime.MinValue;
 
     public bool IsBuilding => _isBuilding;
 
@@ -67,6 +69,8 @@ public sealed class StaticMapBuilder
             _frames = 0;
             _acceptedPoints = 0;
             _droppedFrames = 0;
+            _cachedStableVoxels = 0;
+            _lastStableScanUtc = DateTime.MinValue;
             _channel = Channel.CreateBounded<PointCloudFrame>(new BoundedChannelOptions(2)
             {
                 SingleReader = true,
@@ -103,6 +107,8 @@ public sealed class StaticMapBuilder
             _frames = 0;
             _acceptedPoints = 0;
             _droppedFrames = 0;
+            _cachedStableVoxels = 0;
+            _lastStableScanUtc = DateTime.MinValue;
         }
     }
 
@@ -157,10 +163,18 @@ public sealed class StaticMapBuilder
     {
         lock (_gate)
         {
-            var stable = 0;
-            foreach (var v in _voxels.Values)
-                if (IsStable(v, _settings)) stable++;
-            return new StaticMapProgress(_isBuilding, _frames, _acceptedPoints, _voxels.Count, stable,
+            // Counting every stable voxel is O(N). Do it at most once per second so
+            // a long map build does not make the UI progressively slower.
+            var now = DateTime.UtcNow;
+            if ((now - _lastStableScanUtc).TotalSeconds >= 1.0 || _lastStableScanUtc == DateTime.MinValue)
+            {
+                var stable = 0;
+                foreach (var v in _voxels.Values)
+                    if (IsStable(v, _settings)) stable++;
+                _cachedStableVoxels = stable;
+                _lastStableScanUtc = now;
+            }
+            return new StaticMapProgress(_isBuilding, _frames, _acceptedPoints, _voxels.Count, _cachedStableVoxels,
                 Interlocked.Read(ref _droppedFrames));
         }
     }

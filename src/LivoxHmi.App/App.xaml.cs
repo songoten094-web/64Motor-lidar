@@ -11,8 +11,8 @@ public partial class App : System.Windows.Application
             System.Windows.MessageBox.Show(
                 args.Exception.ToString(),
                 "Livox HMI - Unhandled UI exception",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Error);
             args.Handled = true;
         };
 
