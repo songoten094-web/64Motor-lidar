@@ -1,4 +1,4 @@
-
+﻿
 namespace LivoxHmi.Core;
 
 public readonly record struct Point3D(float X, float Y, float Z, byte Reflectivity, byte Tag);
@@ -50,6 +50,12 @@ public sealed class ZoneDefinition
     public string Id { get; set; } = "Z01";
     public string Name { get; set; } = "Zone 01";
     public string SurfaceId { get; set; } = "S01";
+
+    // Zone số mấy bên trong Surface.
+    // S01 / LocalIndex=1 -> Cluster 1 / Column 1
+    // S01 / LocalIndex=2 -> Cluster 1 / Column 2
+    public int LocalIndex { get; set; } = 1;
+
     public ZoneType Type { get; set; } = ZoneType.Rectangle;
     public List<UvPoint> Polygon { get; set; } = new();
     public bool Enabled { get; set; } = true;
@@ -96,9 +102,13 @@ public sealed class CalibrationDefinition
 public sealed class DetectionSettings
 {
     // Realtime loop. 18 Hz + 5-frame confirmation gives ~278 ms nominal touch latency.
-    public int DetectionFps { get; set; } = 18;
-    public int ConfirmFrames { get; set; } = 5;
-    public int ReleaseFrames { get; set; } = 5;
+    public int DetectionFps { get; set; } = 30;
+    // One evidence frame is enough to promote the Zone to ACTIVE.
+    // StaticTouchDetector still requires the distance-adaptive point threshold,
+    // so this does NOT mean a single raw LiDAR point can trigger.
+    public int ConfirmFrames { get; set; } = 1;
+    // Keep ACTIVE latched through short far-range dropouts before re-arming.
+    public int ReleaseFrames { get; set; } = 8;
 
     // Symmetric-ish interaction volume around each Zone surface.
     public double ZoneFrontMm { get; set; } = 125;

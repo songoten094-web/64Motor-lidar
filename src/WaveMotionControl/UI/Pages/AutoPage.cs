@@ -1,4 +1,5 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
+using System.Text.Json;
 using WaveMotionControl.Models;
 using WaveMotionControl.Services;
 using WaveMotionControl.State;
@@ -49,6 +50,44 @@ public partial class AutoPage : UserControl
     private bool _autoStopInProgress;
     private readonly Dictionary<int, int?> _lidarActiveZones = new();
     private readonly Dictionary<int, CancellationTokenSource> _lidarUiWindowCts = new();
+
+    // Tự động lưu cấu hình các cụm AUTO vào LocalAppData.
+    private readonly string _clusterConfigFilePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "WaveMotionControl",
+        "auto-clusters.json");
+    private bool _loadingClusterConfig;
+
+    private sealed class AutoClusterConfigFile
+    {
+        public int Version { get; set; } = 1;
+        public int SelectedClusterId { get; set; }
+        public int NextClusterId { get; set; } = 1;
+        public List<AutoClusterConfigItem> Clusters { get; set; } = new();
+    }
+
+    private sealed class AutoClusterConfigItem
+    {
+        public int Id { get; set; }
+        public int TopRow { get; set; }
+        public int LeftColumn { get; set; }
+        public int Width { get; set; }
+        public int Height { get; set; }
+        public AutoEffectType Effect { get; set; }
+        public AutoWaveDirection WaveDirection { get; set; }
+        public double LayerOffsetRevolutions { get; set; }
+        public double FrequencyHz { get; set; }
+        public int LidarRandomSeed { get; set; }
+        public List<AutoClusterDriverBinding> Drivers { get; set; } = new();
+    }
+
+    private sealed class AutoClusterDriverBinding
+    {
+        public int Row { get; set; }
+        public int Column { get; set; }
+        public int Line { get; set; }
+        public int SlaveId { get; set; }
+    }
 
     private sealed class DesignerDependencies
     {
@@ -157,6 +196,7 @@ public partial class AutoPage : UserControl
         BuildUi();
         PopulateInspectAxes();
         BindEvents();
+        LoadClusterConfiguration();
         RefreshGrid();
     }
 
@@ -695,6 +735,7 @@ public partial class AutoPage : UserControl
                 LoadSelectedClusterSettings();
                 RefreshGrid();
                 RefreshLidarSimulationControls();
+                SaveClusterConfiguration();
             }
         };
         _effectCombo.SelectedIndexChanged += (_, _) =>
@@ -709,6 +750,7 @@ public partial class AutoPage : UserControl
                 selected.LidarRandomSeed = Random.Shared.Next(1, int.MaxValue);
             RefreshLidarSimulationControls();
             RefreshGrid();
+            SaveClusterConfiguration();
         };
         _waveDirectionCombo.SelectedIndexChanged += (_, _) =>
         {
@@ -716,12 +758,14 @@ public partial class AutoPage : UserControl
                 c.WaveDirection = SelectedWaveDirection();
 
             RefreshGrid();
+            SaveClusterConfiguration();
         };
 
         _layerOffset.ValueChanged += (_, _) =>
         {
             if (SelectedCluster() is { } c) c.LayerOffsetRevolutions = (double)_layerOffset.Value;
             _preview.Invalidate();
+            SaveClusterConfiguration();
         };
         _frequency.ValueChanged += (_, _) =>
         {
@@ -729,6 +773,7 @@ public partial class AutoPage : UserControl
             RefreshSpeedInfo();
             RefreshAutoReadiness();
             _preview.Invalidate();
+            SaveClusterConfiguration();
         };
         _inspectAxis.SelectedIndexChanged += (_, _) => _preview.Invalidate();
         _state.StateChanged += (_, _) => BeginInvokeSafe(RefreshOnlineInfo);
@@ -744,6 +789,7 @@ public partial class AutoPage : UserControl
         gridTimer.Start();
         Disposed += (_, _) =>
         {
+            SaveClusterConfiguration();
             CancelLidarUiWindowTimers();
             inspectTimer.Dispose();
             gridTimer.Dispose();
@@ -770,7 +816,7 @@ public partial class AutoPage : UserControl
 
         var draft = new ClusterDraft
         {
-            Id = _nextClusterId++,
+            Id = GetNextAvailableClusterId(),
             TopRow = position.Value.Row,
             LeftColumn = position.Value.Column,
             Width = width,
@@ -787,17 +833,56 @@ public partial class AutoPage : UserControl
         RebuildClusterCombo();
         _state.WriteLog(LogLevel.Ok, $"Đã tạo Cụm {draft.Id}: {width}×{height}. Click Grid để đặt góc trên-trái, sau đó gán ID từng ô.");
         RefreshGrid();
+        SaveClusterConfiguration();
     }
 
     private void DeleteSelectedCluster()
     {
         var cluster = SelectedCluster();
-        if (cluster is null) return;
+
+        if (cluster is null)
+            return;
+
+        // Không xóa cấu trúc khi AUTO đang chạy.
+        if (_autoRunning)
+        {
+            MessageBox.Show(
+                this,
+                "Hãy STOP AUTO trước khi xóa cụm.",
+                "Xóa cụm",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+
+            return;
+        }
+
+        var answer = MessageBox.Show(
+            this,
+            $"Bạn có chắc muốn xóa Cụm {cluster.Id}?\r\n\r\n" +
+            $"Cụm này đang tương ứng với Surface S{cluster.Id:00}.",
+            "Xác nhận xóa cụm",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning);
+
+        if (answer != DialogResult.Yes)
+            return;
+
         _clusters.Remove(cluster);
-        _selectedClusterId = _clusters.FirstOrDefault()?.Id ?? 0;
+
+        _selectedClusterId =
+            _clusters
+                .OrderBy(c => c.Id)
+                .FirstOrDefault()?.Id ?? 0;
+
+        _selectedCell = null;
+
         RebuildClusterCombo();
         RefreshGrid();
-        _state.WriteLog(LogLevel.Warning, $"Đã xóa Cụm {cluster.Id}.");
+
+        _state.WriteLog(
+            LogLevel.Warning,
+            $"Đã xóa Cụm {cluster.Id}. " +
+            $"Surface S{cluster.Id:00} hiện chưa có cụm motor tương ứng.");
     }
 
     private void RebuildClusterCombo()
@@ -872,6 +957,7 @@ public partial class AutoPage : UserControl
             if (localRow >= 0 && localRow < cluster.Height && localCol >= 0 && localCol < cluster.Width)
                 cluster.Drivers[(cluster.TopRow + localRow, cluster.LeftColumn + localCol)] = pair.Value;
         }
+        SaveClusterConfiguration();
         return true;
     }
 
@@ -902,6 +988,7 @@ public partial class AutoPage : UserControl
         cluster.Drivers[cell] = driver;
         _state.WriteLog(LogLevel.Info, $"Cụm {cluster.Id}: ô [{cell.Row + 1},{cell.Column + 1}] = Driver {driver.DisplayId}.");
         RefreshGrid();
+        SaveClusterConfiguration();
     }
 
     private void ClearSelectedCell()
@@ -912,6 +999,7 @@ public partial class AutoPage : UserControl
         if (cluster.Drivers.ContainsKey(cell)) cluster.Drivers[cell] = null;
         _driverIdBox.Clear();
         RefreshGrid();
+        SaveClusterConfiguration();
     }
 
     private ClusterDraft? SelectedCluster() => _clusters.FirstOrDefault(c => c.Id == _selectedClusterId);
@@ -962,17 +1050,18 @@ public partial class AutoPage : UserControl
                         double phase;
                         if (cluster.Effect == AutoEffectType.Lidar)
                         {
-                            if (_lidarActiveZones.TryGetValue(cluster.Id, out var activeZone) && activeZone is int zone)
-                            {
-                                var localColumn = cell.Column - cluster.LeftColumn;
-                                phase = modelCluster.GetLidarTargetRevolutions(zone, localColumn) +
-                                        _preview.CurrentTimeSeconds * Math.Max(0.0001, cluster.FrequencyHz);
-                            }
-                            else
-                            {
-                                phase = modelCluster.GetLidarRandomPhase(a) +
-                                        _preview.CurrentTimeSeconds * Math.Max(0.0001, cluster.FrequencyHz);
-                            }
+                            var localColumn = cell.Column - cluster.LeftColumn;
+                            var multiplier =
+                                _lidarActiveZones.TryGetValue(cluster.Id, out var activeZone) &&
+                                activeZone is int zone &&
+                                localColumn == zone
+                                    ? 2.0
+                                    : 1.0;
+
+                            phase = modelCluster.GetLidarRandomPhase(a) +
+                                    _preview.CurrentTimeSeconds *
+                                    Math.Max(0.0001, cluster.FrequencyHz) *
+                                    multiplier;
                         }
                         else
                         {
@@ -1114,6 +1203,226 @@ public partial class AutoPage : UserControl
         }
         address = default;
         return false;
+    }
+
+    private void SaveClusterConfiguration()
+    {
+        if (_loadingClusterConfig || IsDisposed)
+        {
+            return;
+        }
+
+        try
+        {
+            var config = new AutoClusterConfigFile
+            {
+                Version = 1,
+                SelectedClusterId = _selectedClusterId,
+                NextClusterId = Math.Max(
+                    _nextClusterId,
+                    _clusters.Count == 0 ? 1 : _clusters.Max(c => c.Id) + 1),
+                Clusters = _clusters
+                    .OrderBy(c => c.Id)
+                    .Select(cluster => new AutoClusterConfigItem
+                    {
+                        Id = cluster.Id,
+                        TopRow = cluster.TopRow,
+                        LeftColumn = cluster.LeftColumn,
+                        Width = cluster.Width,
+                        Height = cluster.Height,
+                        Effect = cluster.Effect,
+                        WaveDirection = cluster.WaveDirection,
+                        LayerOffsetRevolutions = cluster.LayerOffsetRevolutions,
+                        FrequencyHz = cluster.FrequencyHz,
+                        LidarRandomSeed = cluster.LidarRandomSeed,
+                        Drivers = cluster.Drivers
+                            .Where(pair => pair.Value is AxisAddress)
+                            .Select(pair =>
+                            {
+                                var address = pair.Value!.Value;
+                                return new AutoClusterDriverBinding
+                                {
+                                    Row = pair.Key.Row,
+                                    Column = pair.Key.Column,
+                                    Line = address.Line,
+                                    SlaveId = address.SlaveId
+                                };
+                            })
+                            .OrderBy(binding => binding.Row)
+                            .ThenBy(binding => binding.Column)
+                            .ToList()
+                    })
+                    .ToList()
+            };
+
+            var directory = Path.GetDirectoryName(_clusterConfigFilePath);
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            var json = JsonSerializer.Serialize(
+                config,
+                new JsonSerializerOptions
+                {
+                    WriteIndented = true
+                });
+
+            // Ghi file tạm rồi replace để hạn chế JSON hỏng khi app đóng đột ngột.
+            var tempFile = _clusterConfigFilePath + ".tmp";
+            File.WriteAllText(tempFile, json);
+            File.Move(tempFile, _clusterConfigFilePath, overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            _state.WriteLog(
+                LogLevel.Warning,
+                $"[AUTO CONFIG] Không lưu được cấu hình cụm: {ex.Message}");
+        }
+    }
+
+    private void LoadClusterConfiguration()
+    {
+        if (!File.Exists(_clusterConfigFilePath))
+        {
+            return;
+        }
+
+        _loadingClusterConfig = true;
+
+        try
+        {
+            var json = File.ReadAllText(_clusterConfigFilePath);
+            var config = JsonSerializer.Deserialize<AutoClusterConfigFile>(
+                json,
+                new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+            if (config is null)
+            {
+                return;
+            }
+
+            var loadedClusters = new List<ClusterDraft>();
+            var usedDrivers = new HashSet<AxisAddress>();
+
+            foreach (var saved in config.Clusters.OrderBy(c => c.Id))
+            {
+                if (saved.Id <= 0 ||
+                    saved.Width is < 1 or > 16 ||
+                    saved.Height is < 1 or > 16 ||
+                    saved.TopRow < 0 ||
+                    saved.LeftColumn < 0 ||
+                    saved.TopRow + saved.Height > 16 ||
+                    saved.LeftColumn + saved.Width > 16)
+                {
+                    _state.WriteLog(
+                        LogLevel.Warning,
+                        $"[AUTO CONFIG] Bỏ qua Cụm {saved.Id}: kích thước/vị trí không hợp lệ.");
+                    continue;
+                }
+
+                if (loadedClusters.Any(other =>
+                    RectsOverlap(
+                        saved.TopRow,
+                        saved.LeftColumn,
+                        saved.Height,
+                        saved.Width,
+                        other.TopRow,
+                        other.LeftColumn,
+                        other.Height,
+                        other.Width)))
+                {
+                    _state.WriteLog(
+                        LogLevel.Warning,
+                        $"[AUTO CONFIG] Bỏ qua Cụm {saved.Id}: chồng lên cụm đã load.");
+                    continue;
+                }
+
+                var draft = new ClusterDraft
+                {
+                    Id = saved.Id,
+                    TopRow = saved.TopRow,
+                    LeftColumn = saved.LeftColumn,
+                    Width = saved.Width,
+                    Height = saved.Height,
+                    Effect = saved.Effect,
+                    WaveDirection = saved.WaveDirection,
+                    LayerOffsetRevolutions = Math.Clamp(saved.LayerOffsetRevolutions, 0.001, 1.0),
+                    FrequencyHz = Math.Clamp(saved.FrequencyHz, 0.01, 5.0),
+                    LidarRandomSeed = saved.LidarRandomSeed == 0
+                        ? Random.Shared.Next(1, int.MaxValue)
+                        : saved.LidarRandomSeed
+                };
+
+                foreach (var cell in draft.Cells())
+                {
+                    draft.Drivers[cell] = null;
+                }
+
+                foreach (var binding in saved.Drivers)
+                {
+                    var cell = (binding.Row, binding.Column);
+
+                    if (!draft.Contains(cell.Row, cell.Column) ||
+                        binding.Line is < 1 or > 4 ||
+                        binding.SlaveId is < 1 or > 16)
+                    {
+                        continue;
+                    }
+
+                    var address = new AxisAddress(
+                        binding.Line,
+                        binding.SlaveId);
+
+                    if (!usedDrivers.Add(address))
+                    {
+                        _state.WriteLog(
+                            LogLevel.Warning,
+                            $"[AUTO CONFIG] Driver {address.DisplayId} bị trùng; bỏ binding trùng.");
+                        continue;
+                    }
+
+                    draft.Drivers[cell] = address;
+                }
+
+                loadedClusters.Add(draft);
+            }
+
+            _clusters.Clear();
+            _clusters.AddRange(loadedClusters);
+
+            _nextClusterId = Math.Max(
+                Math.Max(1, config.NextClusterId),
+                _clusters.Count == 0 ? 1 : _clusters.Max(c => c.Id) + 1);
+
+            _selectedClusterId =
+                _clusters.Any(c => c.Id == config.SelectedClusterId)
+                    ? config.SelectedClusterId
+                    : _clusters.FirstOrDefault()?.Id ?? 0;
+
+            RebuildClusterCombo();
+            LoadSelectedClusterSettings();
+            RefreshGrid();
+            RefreshLidarSimulationControls();
+            RefreshAutoReadiness();
+
+            _state.WriteLog(
+                LogLevel.Ok,
+                $"[AUTO CONFIG] Đã khôi phục {_clusters.Count} cụm từ file cấu hình.");
+        }
+        catch (Exception ex)
+        {
+            _state.WriteLog(
+                LogLevel.Warning,
+                $"[AUTO CONFIG] Không đọc được cấu hình cụm; dùng cấu hình trống. {ex.Message}");
+        }
+        finally
+        {
+            _loadingClusterConfig = false;
+        }
     }
 
     private static AutoCluster ToAutoCluster(ClusterDraft c) => new(
@@ -1576,8 +1885,8 @@ public partial class AutoPage : UserControl
                          _lidarActiveZones.TryGetValue(cluster.Id, out var activeZone) &&
                          activeZone is int;
         _lidarEnterButton.Enabled = canCommand && !waveLocked;
-        // Tích hợp Livox mới là one-shot FAST 30 s. Không dùng EXIT để cắt hiệu ứng.
-        _lidarExitButton.Enabled = false;
+        // Trong 30 giây boost, giữ Zone hiện tại để tránh ghi chồng tốc độ.
+        _lidarExitButton.Enabled = canCommand && !waveLocked;
     }
 
     private async Task SimulateLidarZoneEnterAsync()
@@ -1596,17 +1905,17 @@ public partial class AutoPage : UserControl
         if (_lidarActiveZones.TryGetValue(cluster.Id, out var locked) && locked is int lockedZone)
         {
             _state.WriteLog(LogLevel.Info,
-                $"LIDAR TEST: Cụm {cluster.Id} Zone {lockedZone + 1} đang FAST 30 giây; bỏ qua trigger lặp.");
+                $"LIDAR TEST: Cụm {cluster.Id} đang BOOST Zone {lockedZone + 1} 2X trong 30 giây; bỏ qua Zone mới.");
             return;
         }
 
         try
         {
-            _autoState.Text = $"LIDAR Z{zone.Index + 1} · FAST 2X / 30s...";
+            _autoState.Text = $"LIDAR Z{zone.Index + 1} · BOOST 2X...";
             _autoState.ForeColor = UiTheme.Accent;
-            await _service.TriggerZoneFastAsync(cluster.Id, zone.Index, 2.0, TimeSpan.FromSeconds(30));
+            await _service.SetLidarZoneAsync(cluster.Id, zone.Index);
             _lidarActiveZones[cluster.Id] = zone.Index;
-            _autoState.Text = $"LIDAR Z{zone.Index + 1} · FAST 30s";
+            _autoState.Text = $"LIDAR Z{zone.Index + 1} · BOOST 2X · 30s";
             _autoState.ForeColor = UiTheme.Online;
             RefreshLidarSimulationControls();
             RefreshGrid();
@@ -1626,11 +1935,40 @@ public partial class AutoPage : UserControl
         }
     }
 
-    private Task SimulateLidarZoneExitAsync()
+    private async Task SimulateLidarZoneExitAsync()
     {
-        _state.WriteLog(LogLevel.Info,
-            "LIDAR TEST: hiệu ứng mới là one-shot FAST 30 s; EXIT không cần thiết. Motor tự về AUTO khi hết timer.");
-        return Task.CompletedTask;
+        var cluster = SelectedCluster();
+        if (cluster is null || cluster.Effect != AutoEffectType.Lidar)
+            return;
+        if (!_autoRunning)
+            return;
+
+        if (_lidarActiveZones.TryGetValue(cluster.Id, out var activeZone) && activeZone is int zone)
+        {
+            _state.WriteLog(LogLevel.Info,
+                $"LIDAR TEST: Zone {zone + 1} đang BOOST 2X trong 30 giây; EXIT thủ công bị bỏ qua.");
+            return;
+        }
+
+        try
+        {
+            await _service.SetLidarZoneAsync(cluster.Id, null);
+            _autoState.Text = "RUNNING · LIDAR RANDOM";
+            _autoState.ForeColor = UiTheme.Online;
+            RefreshGrid();
+            _preview.Invalidate();
+        }
+        catch (OperationCanceledException)
+        {
+            // STOP đã hủy transition.
+        }
+        catch (Exception ex)
+        {
+            _autoState.Text = "LIDAR ERROR";
+            _autoState.ForeColor = UiTheme.Error;
+            _state.WriteLog(LogLevel.Error, $"LIDAR EXIT lỗi: {ex.Message}");
+            MessageBox.Show(this, ex.Message, "LIDAR TEST", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
     private void StartLidarUiWindowTimer(int clusterId, int zoneIndex)
@@ -1660,7 +1998,7 @@ public partial class AutoPage : UserControl
             if (_lidarActiveZones.TryGetValue(clusterId, out var activeZone) && activeZone == zoneIndex)
             {
                 _lidarActiveZones[clusterId] = null;
-                _autoState.Text = "LIDAR FAST DONE · AUTO NORMAL";
+                _autoState.Text = "LIDAR BOOST DONE · RANDOM 1X";
                 _autoState.ForeColor = UiTheme.Accent;
                 RefreshLidarSimulationControls();
                 RefreshGrid();
@@ -1669,7 +2007,7 @@ public partial class AutoPage : UserControl
         }
         catch (OperationCanceledException)
         {
-            // STOP hoặc wave mới đã thay timer UI.
+            // STOP hoặc boost mới đã thay timer UI.
         }
         finally
         {
@@ -1826,5 +2164,14 @@ public partial class AutoPage : UserControl
     private void AutoPage_Load_1(object sender, EventArgs e)
     {
 
+    }
+    private int GetNextAvailableClusterId()
+    {
+        var id = 1;
+
+        while (_clusters.Any(c => c.Id == id))
+            id++;
+
+        return id;
     }
 }

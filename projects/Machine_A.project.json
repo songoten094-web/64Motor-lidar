@@ -97,9 +97,9 @@
     }
   ],
   "detection": {
-    "detectionFps": 18,
-    "confirmFrames": 5,
-    "releaseFrames": 5,
+    "detectionFps": 30,
+    "confirmFrames": 1,
+    "releaseFrames": 8,
     "zoneFrontMm": 125,
     "zoneBackMm": 125,
     "nearRangeMeters": 3.0,

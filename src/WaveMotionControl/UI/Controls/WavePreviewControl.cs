@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Drawing.Drawing2D;
 using WaveMotionControl.Models;
 
@@ -176,15 +176,16 @@ public class WavePreviewControl : Control
         if (cluster.Effect == AutoEffectType.Lidar)
         {
             var activeZone = LidarZoneProvider?.Invoke(cluster.Id);
-            if (activeZone is int zone)
-            {
-                var localColumn = cluster.GetLocalColumn(driver);
-                return cluster.GetLidarTargetRevolutions(zone, localColumn) +
-                       timeSeconds * Math.Max(0.0001, cluster.FrequencyHz);
-            }
+            var localColumn = cluster.GetLocalColumn(driver);
+            var multiplier =
+                activeZone is int zone && localColumn == zone
+                    ? 2.0
+                    : 1.0;
 
             return cluster.GetLidarRandomPhase(driver) +
-                   timeSeconds * Math.Max(0.0001, cluster.FrequencyHz);
+                   timeSeconds *
+                   Math.Max(0.0001, cluster.FrequencyHz) *
+                   multiplier;
         }
 
         return GetLayerPhase(cluster, layerIndex, maxLayerIndex, timeSeconds);

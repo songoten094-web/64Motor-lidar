@@ -1,4 +1,4 @@
-
+﻿
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -9,6 +9,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <PlatformTarget>x64</PlatformTarget>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <Platforms>AnyCPU;x64</Platforms>
   </PropertyGroup>
 
   <ItemGroup>
@@ -30,10 +31,6 @@
       <Link>config\mid360_config.json</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\..\integration\zone_motor_map.json">
-      <Link>integration\zone_motor_map.json</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
     <Content Include="..\..\projects\Machine_A.project.json">
       <Link>projects\Machine_A.project.json</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -50,11 +47,8 @@
     <PropertyGroup>
       <NativeDir>$(MSBuildProjectDirectory)\..\..\native\build-win-x64\bin\$(Configuration)</NativeDir>
     </PropertyGroup>
-    <Error Condition="!Exists('$(NativeDir)\LivoxHmiBridge.dll')"
-           Text="LivoxHmiBridge.dll was not found. Build native first: scripts\build_native.ps1 -Configuration $(Configuration)" />
-    <Copy SourceFiles="$(NativeDir)\LivoxHmiBridge.dll"
-          DestinationFolder="$(OutDir)"
-          SkipUnchangedFiles="true" />
+    <Error Condition="!Exists('$(NativeDir)\LivoxHmiBridge.dll')" Text="LivoxHmiBridge.dll was not found. Build native first: scripts\build_native.ps1 -Configuration $(Configuration)" />
+    <Copy SourceFiles="$(NativeDir)\LivoxHmiBridge.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
 
   <!-- Optional OCCT bridge. The HMI still builds/runs without it; NEW OCCT B-SPLINE is enabled at runtime only when OcctHmiBridge.dll is present. -->

@@ -103,6 +103,10 @@ public partial class MainWindow : Window
     private const float WorldAxisArrowLengthMeters = 0.16f;
     private const float WorldAxisArrowRadiusMeters = 0.035f;
 
+    //trigger
+
+    private readonly HashSet<string> _waveTriggeredZones =
+    new(StringComparer.OrdinalIgnoreCase);
     public MainWindow()
     {
         InitializeComponent();
@@ -158,10 +162,12 @@ public partial class MainWindow : Window
     private void InitializeWaveMotionModule()
     {
         _waveService = new Em2RsModbusService(_waveState);
-        _zoneFastRouter = ZoneFastEffectRouter.Load(
+        _zoneFastRouter = new ZoneFastEffectRouter(
             _waveService,
             _waveState,
-            Path.GetFullPath("integration/zone_motor_map.json"));
+            () => _project,
+            speedMultiplier: 2.0,
+            fastDurationSeconds: 30.0);
 
         // Host the original WaveMotion WinForms HMI inside the WPF tab.
         // This preserves its existing Auto/Manual/Settings UI and RS485 service flow.
@@ -179,9 +185,9 @@ public partial class MainWindow : Window
     private void InitializeTouchRuntime()
     {
         _touchDetector = new StaticTouchDetector { Enabled = true };
-        _project.Detection.DetectionFps = 18;
-        _project.Detection.ConfirmFrames = 5;
-        _project.Detection.ReleaseFrames = 5;
+        _project.Detection.DetectionFps = 30;
+        _project.Detection.ConfirmFrames = 1;
+        _project.Detection.ReleaseFrames = 8;
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -363,7 +369,8 @@ public partial class MainWindow : Window
 
     private async Task DetectionLoopAsync(IPointCloudSource source, CancellationToken ct)
     {
-        var effectiveDetectionFps = Math.Clamp(_project.Detection.DetectionFps, 1, 20);
+        // Do not silently cap a configured 30 Hz detector at 20 Hz.
+        var effectiveDetectionFps = Math.Clamp(_project.Detection.DetectionFps, 1, 30);
         var periodMs = Math.Max(20, 1000 / effectiveDetectionFps);
         PointCloudFrame? lastProcessed = null;
         long lastUiTicks = 0;
@@ -400,14 +407,24 @@ public partial class MainWindow : Window
                 {
                     // Only the rising edge (FREE -> ACTIVE) starts the 30 s motor effect.
                     // FREE/release is intentionally ignored by WaveMotion.
-                    if (ev.State == ZoneState.Active && _zoneFastRouter is not null)
-                        _ = _zoneFastRouter.OnZoneActiveAsync(ev.ZoneId, ct);
-
-                    _ = Dispatcher.InvokeAsync(() =>
+                    if (ev.State == ZoneState.Active)
                     {
-                        if (!_isShuttingDown)
-                            SystemStatus.Text = $"ZONE {ev.ZoneId}: {ev.State.ToString().ToUpperInvariant()}";
-                    }, DispatcherPriority.Background);
+                        // Chỉ kích đúng một lần tại sườn FREE -> ACTIVE
+                        if (_waveTriggeredZones.Add(ev.ZoneId))
+                        {
+                            
+
+                            _ = _zoneFastRouter.OnZoneActiveAsync(
+                                ev.ZoneId,
+                                CancellationToken.None);
+                        }
+                    }
+                    else
+                    {
+                        // Khi Zone hết ACTIVE thì re-arm.
+                        // Lần ACTIVE tiếp theo sẽ được phép trigger lại.
+                        _waveTriggeredZones.Remove(ev.ZoneId);
+                    }
                 }
 
                 // Keep the target cadence based on total cycle time instead of adding a full
@@ -2780,7 +2797,9 @@ public partial class MainWindow : Window
             RenderAllZones();
             return;
         }
-        SelectedZoneText.Text = $"SELECTED ZONE: {zone.Id} | {zone.Name} | {zone.SurfaceId}";
+        SelectedZoneText.Text =
+    $"SELECTED ZONE: {zone.Id} | {zone.Name} | " +
+    $"{zone.SurfaceId} / MOTOR COLUMN {zone.LocalIndex}";
         LoadZoneFields(zone);
         RenderSelectedZone();
         UpdateZoneCoordinateInfo(zone);
@@ -2813,7 +2832,9 @@ public partial class MainWindow : Window
         var zone = new ZoneDefinition
         {
             Id = $"Z{next:00}", Name = $"Zone {next:00}", SurfaceId = surface.Id,
+            LocalIndex = GetNextZoneLocalIndex(surface.Id),
             Type = ZoneType.Rectangle, Enabled = true
+
         };
         SetRectangleZone(zone, cu, cv, w, h, surface);
         _project.Zones.Add(zone);
@@ -3219,6 +3240,7 @@ public partial class MainWindow : Window
         var zone = new ZoneDefinition
         {
             Id = $"Z{next:00}", Name = $"Zone {next:00}", SurfaceId = surface.Id,
+            LocalIndex = GetNextZoneLocalIndex(surface.Id),
             Type = type, Enabled = true, Polygon = polygon
         };
         _project.Zones.Add(zone);
@@ -3446,5 +3468,67 @@ public partial class MainWindow : Window
         ZoneVolumeModel.Geometry = null;
         ZoneVolumeOutlineModel.Geometry = null;
     }
+    private int GetNextZoneLocalIndex(string surfaceId)
+    {
+        var used = _project.Zones
+            .Where(z => string.Equals(
+                z.SurfaceId,
+                surfaceId,
+                StringComparison.OrdinalIgnoreCase))
+            .Select(z => z.LocalIndex)
+            .Where(i => i > 0)
+            .ToHashSet();
 
+        var index = 1;
+
+        while (used.Contains(index))
+            index++;
+
+        return index;
+    }
+    private void NormalizeZoneLocalIndices()
+    {
+        foreach (var surface in _project.Surfaces)
+        {
+            var zones = _project.Zones
+                .Where(z => string.Equals(
+                    z.SurfaceId,
+                    surface.Id,
+                    StringComparison.OrdinalIgnoreCase))
+                .OrderBy(z => ExtractNumericId(z.Id))
+                .ToList();
+
+            var used = new HashSet<int>();
+
+            foreach (var zone in zones)
+            {
+                if (zone.LocalIndex > 0 &&
+                    !used.Contains(zone.LocalIndex))
+                {
+                    used.Add(zone.LocalIndex);
+                    continue;
+                }
+
+                var local = 1;
+
+                while (used.Contains(local))
+                    local++;
+
+                zone.LocalIndex = local;
+                used.Add(local);
+            }
+        }
+    }
+
+    private static int ExtractNumericId(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            return int.MaxValue;
+
+        var digits = new string(id.Where(char.IsDigit).ToArray());
+
+        return int.TryParse(digits, out var value)
+            ? value
+            : int.MaxValue;
+    }
 }

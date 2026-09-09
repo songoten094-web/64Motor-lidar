@@ -1,4 +1,4 @@
-using WaveMotionControl.Models;
+﻿using WaveMotionControl.Models;
 using WaveMotionControl.State;
 
 namespace WaveMotionControl.Services;
@@ -290,11 +290,26 @@ public sealed partial class DemoRs485Service : IRs485Service, IModeDriverSetting
 
                     var axis = _state.GetAxis(address);
                     var speedRps = speeds.GetValueOrDefault(address, 0.2);
-                    axis.PositionRevolutions += Math.Max(0, delta) * speedRps;
-                    axis.VelocityRpm = (int)Math.Round(speedRps * 60.0);
+
+                    var lidarMultiplier = 1.0;
+                    var isBoostedLidarZone = false;
+                    if (cluster.Effect == AutoEffectType.Lidar &&
+                        activeLidarZone is int zone)
+                    {
+                        var localColumn = cluster.GetLocalColumn(address);
+                        isBoostedLidarZone = localColumn == zone;
+                        if (isBoostedLidarZone)
+                        {
+                            lidarMultiplier = 2.0;
+                        }
+                    }
+
+                    var effectiveSpeedRps = speedRps * lidarMultiplier;
+                    axis.PositionRevolutions += Math.Max(0, delta) * effectiveSpeedRps;
+                    axis.VelocityRpm = (int)Math.Round(effectiveSpeedRps * 60.0);
                     axis.LastCommand = cluster.Effect == AutoEffectType.Lidar
-                        ? activeLidarZone is int zone
-                            ? $"LIDAR_WAVE_Z{zone + 1}_RUNNING"
+                        ? isBoostedLidarZone
+                            ? $"LIDAR_ZONE_Z{activeLidarZone!.Value + 1}_BOOST_2X_30S"
                             : "LIDAR_RANDOM_RUNNING"
                         : "AUTO_16PR_INTERNAL_RUNNING";
                 }
@@ -305,7 +320,7 @@ public sealed partial class DemoRs485Service : IRs485Service, IModeDriverSetting
         return Task.CompletedTask;
     }
 
-    public async Task SetLidarZoneAsync(
+    public Task SetLidarZoneAsync(
         int clusterId,
         int? zeroBasedZoneColumn,
         CancellationToken cancellationToken = default)
@@ -313,6 +328,7 @@ public sealed partial class DemoRs485Service : IRs485Service, IModeDriverSetting
         AutoProgram program;
         CancellationToken autoToken;
         int? activeLockedZone;
+
         lock (_demoLidarSync)
         {
             program = _activeAutoProgram
@@ -323,70 +339,73 @@ public sealed partial class DemoRs485Service : IRs485Service, IModeDriverSetting
 
         var cluster = program.Clusters.FirstOrDefault(c => c.Id == clusterId)
             ?? throw new InvalidOperationException($"Không tìm thấy Cụm {clusterId}.");
-        if (cluster.Effect != AutoEffectType.Lidar)
-            throw new InvalidOperationException($"Cụm {clusterId} không dùng hiệu ứng LIDAR.");
 
-        if (zeroBasedZoneColumn is int zone && (zone < 0 || zone >= cluster.Width))
+        if (cluster.Effect != AutoEffectType.Lidar)
+        {
+            throw new InvalidOperationException($"Cụm {clusterId} không dùng hiệu ứng LIDAR.");
+        }
+
+        if (zeroBasedZoneColumn is int zone &&
+            (zone < 0 || zone >= cluster.Width))
+        {
             throw new ArgumentOutOfRangeException(nameof(zeroBasedZoneColumn));
+        }
 
         if (activeLockedZone is int lockedZone)
         {
-            _state.WriteLog(LogLevel.Info,
-                $"[Mô phỏng LIDAR] Cụm {clusterId}: đang khóa Zone {lockedZone + 1} trong 60 giây; bỏ qua tín hiệu mới.");
-            return;
+            _state.WriteLog(
+                LogLevel.Info,
+                $"[Mô phỏng LIDAR BOOST] Cụm {clusterId}: Zone {lockedZone + 1} " +
+                "đang chạy 2X trong 30 giây; bỏ qua tín hiệu mới.");
+            return Task.CompletedTask;
         }
 
         if (zeroBasedZoneColumn is null)
-            return;
+        {
+            return Task.CompletedTask;
+        }
 
         var activeZone = zeroBasedZoneColumn.Value;
-        var cells = cluster.Cells.Where(c => c.DriverId is not null).ToArray();
-
-        double NextForwardPhase(double current, double phase)
-        {
-            var cycle = Math.Floor(current);
-            var target = cycle + phase;
-            if (target <= current + 0.001) target += 1.0;
-            return target;
-        }
 
         lock (_demoLidarSync)
         {
-            if (_demoLidarZones.TryGetValue(clusterId, out var raceZone) && raceZone is int)
-                return;
+            if (_demoLidarZones.TryGetValue(clusterId, out var raceZone) &&
+                raceZone is int)
+            {
+                return Task.CompletedTask;
+            }
+
             _demoLidarZones[clusterId] = activeZone;
         }
 
-        foreach (var cell in cells)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var address = cell.DriverId!.Value;
-            var axis = _state.GetAxis(address);
-            var localColumn = cell.Column - cluster.LeftColumn;
-            var targetPhase = cluster.GetLidarTargetRevolutions(activeZone, localColumn);
-            axis.PositionRevolutions = NextForwardPhase(axis.PositionRevolutions, targetPhase);
-            axis.VelocityRpm = (int)Math.Round(cluster.FrequencyHz * 60.0 * 2.0);
-            axis.State = AxisMotionState.Moving;
-            axis.LastCommand = $"LIDAR_PHASE_2X_Z{activeZone + 1}_{targetPhase:0.###}REV";
-        }
-
-        _state.NotifyStateChanged();
-        await Task.Delay(80, cancellationToken).ConfigureAwait(false);
-
-        foreach (var cell in cells)
+        foreach (var cell in cluster.Cells.Where(c =>
+                     c.DriverId is not null &&
+                     c.Column - cluster.LeftColumn == activeZone))
         {
             var axis = _state.GetAxis(cell.DriverId!.Value);
-            axis.VelocityRpm = (int)Math.Round(cluster.FrequencyHz * 60.0);
-            axis.LastCommand = $"LIDAR_WAVE_Z{activeZone + 1}_60S_RUNNING";
+            axis.VelocityRpm = (int)Math.Round(
+                cluster.FrequencyHz * 60.0 * 2.0);
+            axis.State = AxisMotionState.Moving;
+            axis.LastCommand =
+                $"LIDAR_ZONE_Z{activeZone + 1}_BOOST_2X_30S";
         }
-        _state.NotifyStateChanged();
-        _state.WriteLog(LogLevel.Ok,
-            $"[Mô phỏng LIDAR] Cụm {clusterId}: Zone {activeZone + 1} khóa; phase @2X, chạy wave 60 giây @1X.");
 
-        _ = RunDemoLidarWaveWindowAsync(program, cluster, activeZone, autoToken);
+        _state.NotifyStateChanged();
+        _state.WriteLog(
+            LogLevel.Ok,
+            $"[Mô phỏng LIDAR BOOST] Cụm {clusterId}: Zone {activeZone + 1} " +
+            "tăng 2X trong 30 giây; các Zone khác giữ 1X.");
+
+        _ = RunDemoLidarZoneBoostWindowAsync(
+            program,
+            cluster,
+            activeZone,
+            autoToken);
+
+        return Task.CompletedTask;
     }
 
-    private async Task RunDemoLidarWaveWindowAsync(
+    private async Task RunDemoLidarZoneBoostWindowAsync(
         AutoProgram program,
         AutoCluster cluster,
         int activeZone,
@@ -394,11 +413,9 @@ public sealed partial class DemoRs485Service : IRs485Service, IModeDriverSetting
     {
         try
         {
-            await Task.Delay(TimeSpan.FromSeconds(60), cancellationToken).ConfigureAwait(false);
-            while (_isAutoPaused)
-            {
-                await Task.Delay(100, cancellationToken).ConfigureAwait(false);
-            }
+            await Task.Delay(
+                TimeSpan.FromSeconds(30),
+                cancellationToken).ConfigureAwait(false);
 
             lock (_demoLidarSync)
             {
@@ -408,30 +425,25 @@ public sealed partial class DemoRs485Service : IRs485Service, IModeDriverSetting
                 {
                     return;
                 }
+
+                _demoLidarZones[cluster.Id] = null;
             }
 
-            var cells = cluster.Cells.Where(c => c.DriverId is not null).ToArray();
-            foreach (var cell in cells)
+            foreach (var cell in cluster.Cells.Where(c =>
+                         c.DriverId is not null &&
+                         c.Column - cluster.LeftColumn == activeZone))
             {
-                var address = cell.DriverId!.Value;
-                var axis = _state.GetAxis(address);
-                var randomPhase = cluster.GetLidarRandomPhase(address);
-                var cycle = Math.Floor(axis.PositionRevolutions);
-                var target = cycle + randomPhase;
-                if (target <= axis.PositionRevolutions + 0.001) target += 1.0;
-                axis.PositionRevolutions = target;
-                axis.VelocityRpm = (int)Math.Round(cluster.FrequencyHz * 60.0);
-                axis.State = AxisMotionState.Moving;
+                var axis = _state.GetAxis(cell.DriverId!.Value);
+                axis.VelocityRpm = (int)Math.Round(
+                    cluster.FrequencyHz * 60.0);
                 axis.LastCommand = "LIDAR_RANDOM_RUNNING";
             }
 
-            lock (_demoLidarSync)
-            {
-                _demoLidarZones[cluster.Id] = null;
-            }
             _state.NotifyStateChanged();
-            _state.WriteLog(LogLevel.Ok,
-                $"[Mô phỏng LIDAR] Cụm {cluster.Id}: đủ 60 giây -> trở lại RANDOM.");
+            _state.WriteLog(
+                LogLevel.Ok,
+                $"[Mô phỏng LIDAR BOOST] Cụm {cluster.Id}: Zone {activeZone + 1} " +
+                "đủ 30 giây -> trở về 1X.");
         }
         catch (OperationCanceledException)
         {
